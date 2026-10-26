@@ -256,16 +256,24 @@ async def next_question(student_id: str, skill_id: str):
 
 
 class SpeakBody(BaseModel):
-    student_id: str
+    student_id: str = ""
+    language: str = ""
+    voice: str = ""
     text: str
     task: str = "Speak"
 
 
 @app.post("/api/tts")
 async def speak(body: SpeakBody):
-    """Bulbul narration. The UI calls this separately so text appears while audio renders."""
-    student = require_student(body.student_id)
-    url, meta = await tts_url(body.text[:2400], student["language"], student["voice"], body.task[:60])
+    """Bulbul narration. The UI calls this separately so text appears while audio renders.
+    Language and voice can be passed directly, so narration doesn't depend on learner state
+    being present on whichever serverless instance serves the request."""
+    if body.language in LANGUAGE_NAMES and body.voice in VOICE_GENDER:
+        language, voice = body.language, body.voice
+    else:
+        student = require_student(body.student_id)
+        language, voice = student["language"], student["voice"]
+    url, meta = await tts_url(body.text[:2400], language, voice, body.task[:60])
     return {"audio_url": url, "trace": [meta] if meta else []}
 
 

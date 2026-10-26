@@ -91,7 +91,8 @@ function speakFn(text, task) {
   return async () => {
     const key = `${state.student.language}|${state.student.voice}|${text}`;
     if (!ttsCache.has(key)) {
-      const promise = api("/api/tts", { method: "POST", json: { student_id: state.student.id, text, task } })
+      const { id: student_id, language, voice } = state.student;
+      const promise = api("/api/tts", { method: "POST", json: { student_id, language, voice, text, task } })
         .then((r) => r.audio_url)
         .catch((e) => { ttsCache.delete(key); throw e; });
       ttsCache.set(key, promise);
