@@ -28,9 +28,11 @@ REASONING = os.getenv("SARVAM_REASONING", "").strip() or None
 
 TTS_MAX_CHARS = 2400
 TTS_CHUNK_CHARS = 160
-# Bulbul's tail latency is spiky (the same request can take 3 s or 20 s), so a request
-# still pending after this many seconds gets a duplicate and the first reply wins.
-TTS_HEDGE_AFTER = 4.0
+# Bulbul's tail latency is spiky (the same request can take 3 s or 20 s), so each attempt
+# gets a short read timeout and a stalled request is retried; the last attempt waits longer.
+# (Racing duplicate requests and cancelling the loser was faster locally, but on Vercel's
+# Python runtime the response never completed after the cancellation.)
+TTS_ATTEMPT_TIMEOUTS = (6.0, 8.0, 30.0)
 RETRY_STATUSES = {429, 500, 502, 503, 504}
 
 
@@ -58,17 +60,20 @@ class Sarvam:
     async def close(self):
         await self.http.aclose()
 
-    async def _post(self, path, **kwargs):
+    async def _post(self, path, attempt_timeouts=None, **kwargs):
         headers = {"api-subscription-key": self.api_key}
         if path.startswith("/v1/"):
             headers["Authorization"] = f"Bearer {self.api_key}"
         for attempt in range(3):
+            if attempt_timeouts:
+                kwargs["timeout"] = httpx.Timeout(attempt_timeouts[attempt], connect=10)
             try:
                 resp = await self.http.post(path, headers=headers, **kwargs)
             except httpx.TransportError as exc:
                 if attempt == 2:
-                    raise SarvamError(f"Could not reach Sarvam API: {exc}") from exc
-                await asyncio.sleep(1.5 * (attempt + 1))
+                    raise SarvamError(f"Could not reach Sarvam API: {exc!r}") from exc
+                if not isinstance(exc, httpx.TimeoutException):
+                    await asyncio.sleep(1.5 * (attempt + 1))
                 continue
             if resp.status_code in RETRY_STATUSES and attempt < 2:
                 await asyncio.sleep(1.5 * (attempt + 1))
@@ -107,10 +112,10 @@ class Sarvam:
 
         async def one(chunk):
             async with limit:
-                return await _hedged(lambda: self._post("/text-to-speech", json={
+                return await self._post("/text-to-speech", attempt_timeouts=TTS_ATTEMPT_TIMEOUTS, json={
                     "text": chunk, "language_code": language_code, "model": TTS_MODEL,
                     "speaker": speaker, "pace": pace, "speech_sample_rate": 22050,
-                }), TTS_HEDGE_AFTER)
+                })
 
         results = await asyncio.gather(*[one(chunk) for chunk in chunks])
         wavs = [base64.b64decode(r["audios"][0]) for r in results]
@@ -162,29 +167,6 @@ class Sarvam:
 
 def _ms(start):
     return int((time.perf_counter() - start) * 1000)
-
-
-async def _hedged(make_call, hedge_after):
-    """Run make_call(); if it hasn't finished after `hedge_after` seconds, start a second
-    identical call and return whichever succeeds first."""
-    first = asyncio.ensure_future(make_call())
-    done, _ = await asyncio.wait({first}, timeout=hedge_after)
-    if done:
-        return first.result()
-    second = asyncio.ensure_future(make_call())
-    pending = {first, second}
-    error = None
-    try:
-        while pending:
-            done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
-            for task in done:
-                if task.exception() is None:
-                    return task.result()
-                error = task.exception()
-        raise error
-    finally:
-        for task in pending:
-            task.cancel()
 
 
 def _parse_json(result):
