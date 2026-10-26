@@ -58,16 +58,28 @@ async function api(path, opts = {}, retried = false) {
   }
 }
 
-async function rawApi(path, { method = "GET", json, form } = {}) {
+async function rawApi(path, { method = "GET", json, form, timeoutMs } = {}) {
   const opts = { method, headers: {} };
+  let timer = null;
+  if (timeoutMs) {
+    const ctl = new AbortController();
+    opts.signal = ctl.signal;
+    timer = setTimeout(() => ctl.abort(), timeoutMs);
+  }
   if (json) {
     opts.body = JSON.stringify(json);
     opts.headers["Content-Type"] = "application/json";
   }
   if (form) opts.body = form;
-  const res = await fetch(path, opts);
-  let body = null;
-  try { body = await res.json(); } catch { /* non-JSON error */ }
+  let res, body = null;
+  try {
+    res = await fetch(path, opts);
+    try { body = await res.json(); } catch { /* non-JSON error */ }
+  } catch (e) {
+    throw new Error(e.name === "AbortError" ? "The server took too long to respond" : "Network error — please try again");
+  } finally {
+    clearTimeout(timer);
+  }
   if (!res.ok) {
     const detail = body?.error || body?.detail;
     const msg = Array.isArray(detail) ? detail.map((d) => d.msg).join("; ") : detail;
@@ -92,7 +104,11 @@ function speakFn(text, task) {
     const key = `${state.student.language}|${state.student.voice}|${text}`;
     if (!ttsCache.has(key)) {
       const { id: student_id, language, voice } = state.student;
-      const promise = api("/api/tts", { method: "POST", json: { student_id, language, voice, text, task } })
+      const request = { method: "POST", json: { student_id, language, voice, text, task }, timeoutMs: 45000 };
+      // Hosted on Vercel, a large response occasionally never arrives even though the server
+      // finished; the audio is cached server-side, so one retry is cheap.
+      const promise = api("/api/tts", request)
+        .catch((e) => (/Network error|too long/.test(e.message) ? api("/api/tts", request) : Promise.reject(e)))
         .then((r) => r.audio_url)
         .catch((e) => { ttsCache.delete(key); throw e; });
       ttsCache.set(key, promise);
