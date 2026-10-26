@@ -1,5 +1,7 @@
 # Aawaz se Diagnosis — Spoken Misconception Detector
 
+**Live demo: [aawaz-se-diagnosis.vercel.app](https://aawaz-se-diagnosis.vercel.app)**
+
 **आवाज़ से डायग्नोसिस.** A maths tutor that *listens* to a child explain their reasoning out loud, in their own language, works out which misconception is behind the answer, re-teaches that idea another way, and then runs spoken practice drills that update a per-skill mastery graph.
 
 It is built on three [Sarvam AI](https://www.sarvam.ai) models:
