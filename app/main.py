@@ -11,6 +11,7 @@ shows first while Bulbul renders audio):
 """
 import base64
 import hashlib
+import logging
 import os
 import random
 import re
@@ -59,6 +60,20 @@ async def lifespan(_app):
 app = FastAPI(title="Aawaz se Diagnosis", lifespan=lifespan)
 
 
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("aawaz")
+
+
+@app.middleware("http")
+async def timing(request: Request, call_next):
+    started = time.perf_counter()
+    log.info("start %s %s", request.method, request.url.path)
+    response = await call_next(request)
+    log.info("done %s %s %d in %d ms", request.method, request.url.path, response.status_code,
+             int((time.perf_counter() - started) * 1000))
+    return response
+
+
 @app.exception_handler(SarvamError)
 async def sarvam_error_handler(_request: Request, exc: SarvamError):
     return JSONResponse({"error": str(exc)}, status_code=exc.status)
@@ -82,15 +97,15 @@ async def tts_url(text, lang, voice, task):
     if not text:
         return None, None
     key = hashlib.sha1(f"{TTS_MODEL}|{voice}|{lang}|{text}".encode()).hexdigest()[:20]
-    path = AUDIO_DIR / f"{key}.wav"
+    path = AUDIO_DIR / f"{key}.mp3"
     if path.exists():
         meta = {"api": "Bulbul", "model": TTS_MODEL, "task": task, "ms": 0, "cached": True}
     else:
         audio, meta = await sarvam.speak(text, lang, speaker=voice, task=task)
         path.write_bytes(audio)
     if INLINE_AUDIO:
-        return "data:audio/wav;base64," + base64.b64encode(path.read_bytes()).decode(), meta
-    return f"/audio/{key}.wav", meta
+        return "data:audio/mpeg;base64," + base64.b64encode(path.read_bytes()).decode(), meta
+    return f"/audio/{key}.mp3", meta
 
 
 async def question_text(skill, question, lang):

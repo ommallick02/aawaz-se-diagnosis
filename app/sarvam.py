@@ -9,16 +9,16 @@ which model handled each step of the pipeline and how long it took.
 """
 import asyncio
 import base64
-import io
 import json
+import logging
 import os
 import re
 import time
-import wave
 
 import httpx
 
 BASE_URL = "https://api.sarvam.ai"
+log = logging.getLogger("aawaz.sarvam")
 STT_MODEL = os.getenv("SARVAM_STT_MODEL", "saaras:v4")
 TTS_MODEL = os.getenv("SARVAM_TTS_MODEL", "bulbul:v3")
 LLM_MODEL = os.getenv("SARVAM_LLM_MODEL", "sarvam-105b")
@@ -67,14 +67,17 @@ class Sarvam:
         for attempt in range(3):
             if attempt_timeouts:
                 kwargs["timeout"] = httpx.Timeout(attempt_timeouts[attempt], connect=10)
+            started = time.perf_counter()
             try:
                 resp = await self.http.post(path, headers=headers, **kwargs)
             except httpx.TransportError as exc:
+                log.warning("sarvam %s attempt %d failed after %d ms: %r", path, attempt + 1, _ms(started), exc)
                 if attempt == 2:
                     raise SarvamError(f"Could not reach Sarvam API: {exc!r}") from exc
                 if not isinstance(exc, httpx.TimeoutException):
                     await asyncio.sleep(1.5 * (attempt + 1))
                 continue
+            log.info("sarvam %s attempt %d -> %d in %d ms", path, attempt + 1, resp.status_code, _ms(started))
             if resp.status_code in RETRY_STATUSES and attempt < 2:
                 await asyncio.sleep(1.5 * (attempt + 1))
                 continue
@@ -104,7 +107,8 @@ class Sarvam:
 
     # ---------------------------------------------------------------- Bulbul (TTS)
     async def speak(self, text, language_code, speaker="priya", pace=1.0, task="Speak"):
-        """Return WAV bytes. Bulbul's latency grows with text length, so longer text is
+        """Return MP3 bytes (about a tenth the size of WAV, which keeps long lessons well under
+        serverless response limits when audio is sent inline). Bulbul's latency grows with text length, so longer text is
         split at sentence boundaries, synthesized in parallel and stitched back together."""
         chunks = _split_for_tts(text)
         start = time.perf_counter()
@@ -115,12 +119,14 @@ class Sarvam:
                 return await self._post("/text-to-speech", attempt_timeouts=TTS_ATTEMPT_TIMEOUTS, json={
                     "text": chunk, "language_code": language_code, "model": TTS_MODEL,
                     "speaker": speaker, "pace": pace, "speech_sample_rate": 22050,
+                    "output_audio_codec": "mp3",
                 })
 
         results = await asyncio.gather(*[one(chunk) for chunk in chunks])
-        wavs = [base64.b64decode(r["audios"][0]) for r in results]
+        # MP3 is a stream of self-contained frames, so chunks can simply be joined.
+        clips = [base64.b64decode(r["audios"][0]) for r in results]
         meta = {"api": "Bulbul", "model": TTS_MODEL, "task": task, "ms": _ms(start)}
-        return _concat_wavs(wavs), meta
+        return b"".join(clips), meta
 
     # ---------------------------------------------------------------- Sarvam-105B (LLM)
     async def chat_json(self, messages, schema, name, task="Reason", max_tokens=3000,
@@ -236,17 +242,3 @@ def _split_for_tts(text, target=TTS_CHUNK_CHARS):
     if current:
         chunks.append(current)
     return chunks
-
-
-def _concat_wavs(wavs):
-    if len(wavs) == 1:
-        return wavs[0]
-    out = io.BytesIO()
-    with wave.open(io.BytesIO(wavs[0])) as first:
-        params = first.getparams()
-    with wave.open(out, "wb") as writer:
-        writer.setparams(params)
-        for blob in wavs:
-            with wave.open(io.BytesIO(blob)) as reader:
-                writer.writeframes(reader.readframes(reader.getnframes()))
-    return out.getvalue()

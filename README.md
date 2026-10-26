@@ -68,7 +68,7 @@ On Vercel the disk is ephemeral. Learner profiles live in `/tmp`, and the browse
 ## Implementation notes
 
 - **Structured output.** Sarvam-105B's strict `json_schema` mode looped on whitespace for nested schemas. The app uses JSON mode with the schema in the prompt, then coerces the reply to the schema in code (`conform()` in `app/sarvam.py`).
-- **Latency.** With reasoning off, each Sarvam-105B call takes about 1–3 s. Bulbul's tail latency is spiky (the same request measured 3 s and 22 s), so long text is split into sentence chunks that are synthesized in parallel, and each chunk request has a short read timeout (6 s, then 8 s, then 30 s) with a retry. Narration is fetched separately from the main response, so text appears first.
+- **Latency.** With reasoning off, each Sarvam-105B call takes about 1–3 s. Narration is requested as MP3 (about a tenth the size of WAV, so a long lesson sent inline stays well under Vercel’s 4.5 MB response limit). Bulbul’s tail latency is spiky (the same request measured 3 s and 22 s), so long text is split into sentence chunks that are synthesized in parallel, and each chunk request has a short read timeout (6 s, then 8 s, then 30 s) with a retry. Narration is fetched separately from the main response, so text appears first.
 - **Speakable maths.** Bulbul reads "−8" as "eight", so signs and units are spelled out before synthesis.
 - **Gendered speech.** Prompts tell the model the narrator voice's gender so Hindi verb forms match it ("मैं दिखाती हूँ" vs "दिखाता हूँ").
 
