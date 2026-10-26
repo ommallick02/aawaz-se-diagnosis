@@ -1,0 +1,43 @@
+name: Deploy to Vercel
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Import check
+        env:
+          SARVAM_API_KEY: ${{ secrets.SARVAM_API_KEY }}
+        run: python -c "import index; print('app imports OK')"
+
+  deploy:
+    needs: check
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      HAS_TOKEN: ${{ secrets.VERCEL_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Skip when Vercel secrets are not configured
+        if: env.HAS_TOKEN != 'true'
+        run: echo "::notice::Add VERCEL_TOKEN, VERCEL_ORG_ID and VERCEL_PROJECT_ID secrets to enable deploys."
+      - uses: actions/setup-node@v4
+        if: env.HAS_TOKEN == 'true'
+        with:
+          node-version: 20
+      - name: Deploy (SARVAM_API_KEY comes from GitHub secrets)
+        if: env.HAS_TOKEN == 'true'
+        run: |
+          npm i -g vercel@latest
+          vercel deploy --prod --yes --token "${{ secrets.VERCEL_TOKEN }}" \
+            --env SARVAM_API_KEY="${{ secrets.SARVAM_API_KEY }}"

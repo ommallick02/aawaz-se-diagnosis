@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Aawaz se Diagnosis</title>
+  <meta name="description" content="Spoken misconception detector built on Sarvam AI — Saaras, Sarvam-105B and Bulbul.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%232a78d6'/><rect x='12' y='6' width='8' height='14' rx='4' fill='white'/><path d='M8 15a8 8 0 0 0 16 0' stroke='white' stroke-width='2.5' fill='none'/><path d='M16 23v4' stroke='white' stroke-width='2.5'/></svg>">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32" width="30" height="30"><rect width="32" height="32" rx="8" fill="currentColor"/><rect x="12" y="6" width="8" height="14" rx="4" fill="var(--on-accent)"/><path d="M8 15a8 8 0 0 0 16 0" stroke="var(--on-accent)" stroke-width="2.5" fill="none"/><path d="M16 23v4" stroke="var(--on-accent)" stroke-width="2.5"/></svg>
+      </span>
+      <div>
+        <h1>Aawaz se Diagnosis <span class="brand-hi" lang="hi">आवाज़ से डायग्नोसिस</span></h1>
+        <p class="tagline">Explain your thinking out loud. We find the misconception and re-teach it.</p>
+      </div>
+    </div>
+    <div class="controls" id="controls" hidden>
+      <label class="field">
+        <span>Learner</span>
+        <select id="studentSelect"></select>
+      </label>
+      <button class="btn ghost small" id="newStudentBtn" type="button">+ New</button>
+      <label class="field">
+        <span>Language</span>
+        <select id="langSelect"></select>
+      </label>
+      <label class="field">
+        <span>Voice</span>
+        <select id="voiceSelect"></select>
+      </label>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="card flow" aria-live="polite">
+      <ol class="stepper" id="stepper">
+        <li data-step="ask"><span>1</span>Ask</li>
+        <li data-step="diagnose"><span>2</span>Diagnose</li>
+        <li data-step="reteach"><span>3</span>Re-teach</li>
+        <li data-step="practice"><span>4</span>Practice</li>
+      </ol>
+      <div id="stage" class="stage"></div>
+      <details class="trace" id="traceBox">
+        <summary>Sarvam pipeline <span class="trace-count" id="traceCount"></span></summary>
+        <p class="trace-legend">
+          <span class="api api-saaras">Saaras</span> speech → text ·
+          <span class="api api-llm">Sarvam-105B</span> diagnosis, lessons, drills, grading ·
+          <span class="api api-bulbul">Bulbul</span> text → speech
+        </p>
+        <ol id="traceList" class="trace-list"></ol>
+      </details>
+    </section>
+
+    <aside class="card side" id="side" hidden>
+      <div class="side-head">
+        <h2>Mastery graph</h2>
+        <button class="btn link small" id="mapTableToggle" type="button" aria-pressed="false">Table view</button>
+      </div>
+      <p class="hint">Each skill builds on the ones above it. Bar = mastery, tick = 80% goal, red badge = open misconceptions. Click a skill to see its history.</p>
+      <div id="skillMap" class="viz"></div>
+      <table id="skillTable" class="skill-table" hidden>
+        <thead><tr><th>Skill</th><th>Mastery</th><th>Level</th><th>Open</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <h3 id="chartTitle">Mastery over time</h3>
+      <div id="masteryChart" class="viz"></div>
+      <h3>Misconception log</h3>
+      <ul id="mcList" class="mc-list"></ul>
+      <h3>What helps this learner</h3>
+      <ul id="modalityStats" class="modality-stats"></ul>
+    </aside>
+  </main>
+
+  <dialog id="studentDialog" class="dialog">
+    <form method="dialog" id="studentForm">
+      <h2>New learner</h2>
+      <label class="field block"><span>Name</span><input name="name" required maxlength="40" placeholder="e.g. Riya"></label>
+      <div class="row">
+        <label class="field block"><span>Class</span>
+          <select name="grade"><option>3</option><option>4</option><option selected>5</option><option>6</option><option>7</option></select>
+        </label>
+        <label class="field block"><span>Language</span><select name="language" id="dialogLang"></select></label>
+        <label class="field block"><span>Voice</span><select name="voice" id="dialogVoice"></select></label>
+      </div>
+      <div class="actions">
+        <button class="btn ghost" value="cancel" formnovalidate>Cancel</button>
+        <button class="btn primary" value="ok">Create learner</button>
+      </div>
+    </form>
+  </dialog>
+
+  <audio id="player" preload="auto"></audio>
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>
